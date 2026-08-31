@@ -1,31 +1,61 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-%ctor {
-    NSLog(@"[SimpleCowbell] ===== INJECTED =====");
+static void WriteTest(NSString *text) {
+    NSString *path = @"/var/mobile/Documents/SimpleCowbell_Scan.txt";
 
-    int count = objc_getClassList(NULL, 0);
+    NSFileHandle *file =
+        [NSFileHandle fileHandleForWritingAtPath:path];
 
-    if (count <= 0) {
-        NSLog(@"[SimpleCowbell] objc_getClassList failed");
+    if (!file) {
+        [text writeToFile:path
+               atomically:YES
+                 encoding:NSUTF8StringEncoding
+                    error:nil];
         return;
     }
 
-    Class *classes = (__unsafe_unretained Class *)malloc(sizeof(Class) * count);
+    [file seekToEndOfFile];
 
-    int realCount = objc_getClassList(classes, count);
+    NSString *line =
+        [NSString stringWithFormat:@"%@\n", text];
 
-    NSLog(@"[SimpleCowbell] class count = %d", realCount);
+    [file writeData:
+        [line dataUsingEncoding:NSUTF8StringEncoding]];
+
+    [file closeFile];
+}
+
+%ctor {
+
+    WriteTest(@"===== SimpleCowbell INJECTED =====");
+
+    int count = objc_getClassList(NULL, 0);
+
+    WriteTest(
+        [NSString stringWithFormat:
+            @"Class count = %d", count]
+    );
+
+    if (count <= 0) {
+        WriteTest(@"objc_getClassList FAILED");
+        return;
+    }
+
+    Class *classes =
+        (__unsafe_unretained Class *)
+        malloc(sizeof(Class) * count);
+
+    int realCount =
+        objc_getClassList(classes, count);
 
     for (int i = 0; i < realCount; i++) {
 
-        Class cls = classes[i];
+        const char *name =
+            class_getName(classes[i]);
 
-        const char *name = class_getName(cls);
-
-        if (!name) {
+        if (!name)
             continue;
-        }
 
         NSString *className =
             [NSString stringWithUTF8String:name];
@@ -35,16 +65,17 @@
 
         if ([lower containsString:@"battery"] ||
             [lower containsString:@"lowpower"] ||
-            [lower containsString:@"lowpower"] ||
             [lower containsString:@"controlcenter"] ||
             [lower containsString:@"toggle"]) {
 
-            NSLog(@"[SimpleCowbell] FOUND CLASS: %@",
-                  className);
+            WriteTest(
+                [NSString stringWithFormat:
+                    @"FOUND CLASS: %@", className]
+            );
         }
     }
 
     free(classes);
 
-    NSLog(@"[SimpleCowbell] ===== SCAN DONE =====");
+    WriteTest(@"===== SCAN DONE =====");
 }
