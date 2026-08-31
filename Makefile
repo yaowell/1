@@ -3,6 +3,8 @@ ARCHS = arm64 arm64e
 
 THEOS_PACKAGE_SCHEME = rootless
 
+DEBUG = 1
+
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = SimpleCowbell
