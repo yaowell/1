@@ -1,136 +1,55 @@
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
-
-static void WriteResult(NSString *text) {
-    NSString *path = @"/var/mobile/Documents/SimpleCowbell_Classes.txt";
-    [text writeToFile:path
-           atomically:YES
-             encoding:NSUTF8StringEncoding
-                error:nil];
-}
 
 %ctor {
+    NSLog(@"[SimpleCowbell] >>> LOADED <<<");
+    
+    UIAlertController *alert =
+        [UIAlertController
+            alertControllerWithTitle:@"SimpleCowbell"
+            message:@"Tweak 已成功加载到 SpringBoard"
+            preferredStyle:UIAlertControllerStyleAlert];
 
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
+    [alert addAction:
+        [UIAlertAction
+            actionWithTitle:@"OK"
+            style:UIAlertActionStyleDefault
+            handler:nil]];
 
-            NSMutableString *result =
-                [NSMutableString string];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = nil;
 
-            [result appendString:
-                @"=== SimpleCowbell Runtime Test ===\n\n"];
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in
+                 [UIApplication sharedApplication].connectedScenes) {
 
-            NSArray *classes = @[
-                @"CCUIToggleViewController",
-                @"CCUILowPowerModule",
-                @"CCUICAPackageView",
-                @"_UIBatteryView",
-                @"CCUIControlCenterViewController",
-                @"SBControlCenterController"
-            ];
+                if (scene.activationState ==
+                    UISceneActivationStateForegroundActive) {
 
-            for (NSString *name in classes) {
-
-                Class cls =
-                    NSClassFromString(name);
-
-                [result appendFormat:
-                    @"CLASS %@ = %@\n",
-                    name,
-                    cls ? @"FOUND" : @"NOT FOUND"
-                ];
-
-                if (cls) {
-
-                    [result appendFormat:
-                        @"  superclass = %@\n",
-                        NSStringFromClass(
-                            class_getSuperclass(cls)
-                        )
-                    ];
-
-                    unsigned int count = 0;
-
-                    Method *methods =
-                        class_copyMethodList(
-                            cls,
-                            &count
-                        );
-
-                    [result appendFormat:
-                        @"  methods = %u\n",
-                        count
-                    ];
-
-                    BOOL hasViewDidLoad = NO;
-                    BOOL hasViewWillAppear = NO;
-                    BOOL hasRefreshState = NO;
-                    BOOL hasContentViewController = NO;
-
-                    for (unsigned int i = 0;
-                         i < count;
-                         i++) {
-
-                        SEL sel =
-                            method_getName(methods[i]);
-
-                        NSString *selName =
-                            NSStringFromSelector(sel);
-
-                        if ([selName
-                            isEqualToString:@"viewDidLoad"]) {
-
-                            hasViewDidLoad = YES;
-                        }
-
-                        if ([selName
-                            isEqualToString:@"viewWillAppear:"]) {
-
-                            hasViewWillAppear = YES;
-                        }
-
-                        if ([selName
-                            isEqualToString:@"refreshState"]) {
-
-                            hasRefreshState = YES;
-                        }
-
-                        if ([selName
-                            isEqualToString:@"contentViewController"]) {
-
-                            hasContentViewController = YES;
-                        }
+                    if ([scene isKindOfClass:[UIWindowScene class]]) {
+                        window =
+                            ((UIWindowScene *)scene).windows.firstObject;
                     }
 
-                    free(methods);
-
-                    [result appendFormat:
-                        @"  viewDidLoad = %@\n",
-                        hasViewDidLoad ? @"YES" : @"NO"
-                    ];
-
-                    [result appendFormat:
-                        @"  viewWillAppear = %@\n",
-                        hasViewWillAppear ? @"YES" : @"NO"
-                    ];
-
-                    [result appendFormat:
-                        @"  refreshState = %@\n",
-                        hasRefreshState ? @"YES" : @"NO"
-                    ];
-
-                    [result appendFormat:
-                        @"  contentViewController = %@\n",
-                        hasContentViewController ? @"YES" : @"NO"
-                    ];
+                    if (window) {
+                        break;
+                    }
                 }
-
-                [result appendString:@"\n"];
             }
-
-            WriteResult(result);
         }
-    );
+
+        if (!window) {
+            return;
+        }
+
+        UIViewController *vc =
+            window.rootViewController;
+
+        while (vc.presentedViewController) {
+            vc = vc.presentedViewController;
+        }
+
+        [vc presentViewController:alert
+                         animated:YES
+                       completion:nil];
+    });
 }
