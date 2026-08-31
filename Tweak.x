@@ -1,20 +1,39 @@
 #import <UIKit/UIKit.h>
 
-%hook CCUIToggleViewController
+%hook CCUILowPowerModuleViewController
 
 - (void)viewDidLoad {
-    NSLog(@"[SimpleCowbell] >>> CCUIToggleViewController viewDidLoad");
     %orig;
+
+    NSLog(@"[SimpleCowbell] ===== CCUILowPowerModuleViewController viewDidLoad =====");
+
+    UIAlertController *alert =
+        [UIAlertController alertControllerWithTitle:@"SimpleCowbell"
+                                            message:@"成功进入 CCUILowPowerModuleViewController"
+                                     preferredStyle:UIAlertControllerStyleAlert];
+
+    [alert addAction:
+        [UIAlertAction actionWithTitle:@"OK"
+                                 style:UIAlertActionStyleDefault
+                               handler:nil]];
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *vc = self;
+
+        while (vc.presentedViewController) {
+            vc = vc.presentedViewController;
+        }
+
+        [vc presentViewController:alert
+                         animated:YES
+                       completion:nil];
+    });
 }
 
 - (void)viewWillAppear:(BOOL)animated {
-    NSLog(@"[SimpleCowbell] >>> CCUIToggleViewController viewWillAppear");
     %orig(animated);
-}
 
-- (void)refreshState {
-    NSLog(@"[SimpleCowbell] >>> CCUIToggleViewController refreshState");
-    %orig;
+    NSLog(@"[SimpleCowbell] ===== CCUILowPowerModuleViewController viewWillAppear =====");
 }
 
 %end
