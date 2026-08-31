@@ -1,14 +1,14 @@
 name: Build SimpleCowbell
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-26
 
     steps:
       - name: Checkout
@@ -17,11 +17,11 @@ jobs:
       - name: Install Theos
         run: |
           git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
-          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
 
-      - name: Install dependencies
+      - name: Install SDK
         run: |
-          brew install ldid
+          git clone https://github.com/theos/sdks.git "$HOME/sdks"
+          cp -R "$HOME/sdks/iPhoneOS16.5.sdk" "$HOME/theos/sdks/"
 
       - name: Build
         run: |
@@ -29,8 +29,8 @@ jobs:
           make clean
           make package FINALPACKAGE=1
 
-      - name: Upload DEB
+      - name: Upload deb
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleCowbell
+          name: SimpleCowbell-deb
           path: packages/*.deb
