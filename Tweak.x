@@ -1,58 +1,50 @@
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 
-@interface CCUIToggleViewController : UIViewController
-@property (nonatomic, retain) id module;
-@end
+%ctor {
+    NSLog(@"[SimpleCowbell] ===== INJECTED =====");
 
-%hook CCUIToggleViewController
+    int count = objc_getClassList(NULL, 0);
 
-- (void)viewDidLoad {
-    %orig;
-
-    NSLog(@"[SimpleCowbell] ===== viewDidLoad =====");
-    NSLog(@"[SimpleCowbell] class = %@",
-          NSStringFromClass([self class]));
-
-    id module = self.module;
-
-    NSLog(@"[SimpleCowbell] module = %@", module);
-
-    if (module) {
-        NSLog(@"[SimpleCowbell] module class = %@",
-              NSStringFromClass([module class]));
-    }
-}
-
-- (void)viewWillAppear:(BOOL)animated {
-    %orig(animated);
-
-    NSLog(@"[SimpleCowbell] ===== viewWillAppear =====");
-    NSLog(@"[SimpleCowbell] class = %@",
-          NSStringFromClass([self class]));
-
-    id module = self.module;
-
-    NSLog(@"[SimpleCowbell] module = %@", module);
-
-    if (module) {
-        NSLog(@"[SimpleCowbell] module class = %@",
-              NSStringFromClass([module class]));
-    }
-}
-
-- (void)refreshState {
-    NSLog(@"[SimpleCowbell] ===== refreshState =====");
-
-    id module = self.module;
-
-    NSLog(@"[SimpleCowbell] module = %@", module);
-
-    if (module) {
-        NSLog(@"[SimpleCowbell] module class = %@",
-              NSStringFromClass([module class]));
+    if (count <= 0) {
+        NSLog(@"[SimpleCowbell] objc_getClassList failed");
+        return;
     }
 
-    %orig;
-}
+    Class *classes = (__unsafe_unretained Class *)malloc(sizeof(Class) * count);
 
-%end
+    int realCount = objc_getClassList(classes, count);
+
+    NSLog(@"[SimpleCowbell] class count = %d", realCount);
+
+    for (int i = 0; i < realCount; i++) {
+
+        Class cls = classes[i];
+
+        const char *name = class_getName(cls);
+
+        if (!name) {
+            continue;
+        }
+
+        NSString *className =
+            [NSString stringWithUTF8String:name];
+
+        NSString *lower =
+            [className lowercaseString];
+
+        if ([lower containsString:@"battery"] ||
+            [lower containsString:@"lowpower"] ||
+            [lower containsString:@"lowpower"] ||
+            [lower containsString:@"controlcenter"] ||
+            [lower containsString:@"toggle"]) {
+
+            NSLog(@"[SimpleCowbell] FOUND CLASS: %@",
+                  className);
+        }
+    }
+
+    free(classes);
+
+    NSLog(@"[SimpleCowbell] ===== SCAN DONE =====");
+}
