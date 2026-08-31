@@ -1,0 +1,9 @@
+Package: com.simplecowbell
+Name: SimpleCowbell
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: SimpleCowbell
+Maintainer: SimpleCowbell
+Author: SimpleCowbell
+Section: Tweaks
+Depends: firmware (>= 16.0)
