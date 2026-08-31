@@ -1,24 +1,29 @@
 #import <UIKit/UIKit.h>
 
+@interface CCUILowPowerModuleViewController : UIViewController
+@end
+
 %hook CCUILowPowerModuleViewController
 
 - (void)viewDidLoad {
     %orig;
 
     NSLog(@"[SimpleCowbell] ===== CCUILowPowerModuleViewController viewDidLoad =====");
-
-    UIAlertController *alert =
-        [UIAlertController alertControllerWithTitle:@"SimpleCowbell"
-                                            message:@"成功进入 CCUILowPowerModuleViewController"
-                                     preferredStyle:UIAlertControllerStyleAlert];
-
-    [alert addAction:
-        [UIAlertAction actionWithTitle:@"OK"
-                                 style:UIAlertActionStyleDefault
-                               handler:nil]];
+    NSLog(@"[SimpleCowbell] self = %@", self);
+    NSLog(@"[SimpleCowbell] class = %@", NSStringFromClass([self class]));
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *vc = self;
+        UIAlertController *alert =
+            [UIAlertController alertControllerWithTitle:@"SimpleCowbell"
+                                                message:@"成功 Hook 到 CCUILowPowerModuleViewController"
+                                         preferredStyle:UIAlertControllerStyleAlert];
+
+        [alert addAction:
+            [UIAlertAction actionWithTitle:@"OK"
+                                     style:UIAlertActionStyleDefault
+                                   handler:nil]];
+
+        UIViewController *vc = (UIViewController *)self;
 
         while (vc.presentedViewController) {
             vc = vc.presentedViewController;
@@ -33,7 +38,9 @@
 - (void)viewWillAppear:(BOOL)animated {
     %orig(animated);
 
-    NSLog(@"[SimpleCowbell] ===== CCUILowPowerModuleViewController viewWillAppear =====");
+    NSLog(@"[SimpleCowbell] ===== viewWillAppear =====");
+    NSLog(@"[SimpleCowbell] self = %@", self);
+    NSLog(@"[SimpleCowbell] class = %@", NSStringFromClass([self class]));
 }
 
 %end
