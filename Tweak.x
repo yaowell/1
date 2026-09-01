@@ -7,23 +7,37 @@
 
 %hook CCUICAPackageView
 
-- (void)layoutSubviews {
+- (void)didMoveToWindow {
     %orig;
 
-    NSLog(@"[CCProbe] ===== CCUICAPackageView =====");
-    NSLog(@"[CCProbe] self = %@", self);
-    NSLog(@"[CCProbe] class = %@", NSStringFromClass([self class]));
-    NSLog(@"[CCProbe] packageName = %@", self.packageName);
-    NSLog(@"[CCProbe] window = %@", self.window);
+    if (!self.window) return;
 
-    for (UIView *subview in self.subviews) {
-        NSLog(@"[CCProbe] subview = %@ | class = %@ | tag = %ld",
-              subview,
-              NSStringFromClass([subview class]),
-              (long)subview.tag);
+    NSString *className = NSStringFromClass([self class]);
+    NSString *superName = NSStringFromClass([self superclass]);
+    NSString *packageName = @"";
+
+    if ([self respondsToSelector:@selector(packageName)]) {
+        packageName = self.packageName ?: @"";
     }
 
-    NSLog(@"[CCProbe] ============================");
+    NSLog(@"[CowbellProbe] ========================");
+    NSLog(@"[CowbellProbe] class       = %@", className);
+    NSLog(@"[CowbellProbe] superclass  = %@", superName);
+    NSLog(@"[CowbellProbe] packageName = %@", packageName);
+
+    UIResponder *r = self;
+    int level = 0;
+
+    while (r && level < 12) {
+        NSLog(@"[CowbellProbe] responder[%d] = %@",
+              level,
+              NSStringFromClass([r class]));
+
+        r = [r nextResponder];
+        level++;
+    }
+
+    NSLog(@"[CowbellProbe] ========================");
 }
 
 %end
