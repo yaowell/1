@@ -1,36 +1,29 @@
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
+
+@interface CCUICAPackageView : UIView
+@property (nonatomic, copy) NSString *packageName;
+@end
 
 %hook CCUICAPackageView
 
-- (void)didMoveToWindow {
+- (void)layoutSubviews {
     %orig;
 
-    if (!self.window) return;
-
     NSLog(@"[CCProbe] ===== CCUICAPackageView =====");
-    NSLog(@"[CCProbe] self = %@", (UIView *)self);
-    NSLog(@"[CCProbe] class = %@", NSStringFromClass([(UIView *)self class]));
+    NSLog(@"[CCProbe] self = %@", self);
+    NSLog(@"[CCProbe] class = %@", NSStringFromClass([self class]));
+    NSLog(@"[CCProbe] packageName = %@", self.packageName);
+    NSLog(@"[CCProbe] window = %@", self.window);
 
-    UIView *view = (UIView *)self;
-
-    if ([view respondsToSelector:@selector(packageName)]) {
-        NSLog(@"[CCProbe] packageName = %@", 
-              [view valueForKey:@"packageName"]);
+    for (UIView *subview in self.subviews) {
+        NSLog(@"[CCProbe] subview = %@ | class = %@ | tag = %ld",
+              subview,
+              NSStringFromClass([subview class]),
+              (long)subview.tag);
     }
 
-    UIResponder *r = (UIResponder *)view;
-
-    for (int i = 0; r && i < 20; i++) {
-
-        NSLog(@"[CCProbe] responder[%d] = %@ | class = %@",
-              i,
-              r,
-              NSStringFromClass([r class]));
-
-        r = [r nextResponder];
-    }
-
-    NSLog(@"[CCProbe] ===============================");
+    NSLog(@"[CCProbe] ============================");
 }
 
 %end
