@@ -1,5 +1,4 @@
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 
 %hook CCUICAPackageView
 
@@ -9,17 +8,21 @@
     if (!self.window) return;
 
     NSLog(@"[CCProbe] ===== CCUICAPackageView =====");
-    NSLog(@"[CCProbe] self = %@", self);
-    NSLog(@"[CCProbe] class = %@", NSStringFromClass([self class]));
+    NSLog(@"[CCProbe] self = %@", (UIView *)self);
+    NSLog(@"[CCProbe] class = %@", NSStringFromClass([(UIView *)self class]));
 
-    if ([self respondsToSelector:@selector(packageName)]) {
-        NSLog(@"[CCProbe] packageName = %@", self.packageName);
+    UIView *view = (UIView *)self;
+
+    if ([view respondsToSelector:@selector(packageName)]) {
+        NSLog(@"[CCProbe] packageName = %@", 
+              [view valueForKey:@"packageName"]);
     }
 
-    UIResponder *r = self;
+    UIResponder *r = (UIResponder *)view;
 
-    for (int i = 0; r && i < 15; i++) {
-        NSLog(@"[CCProbe] responder[%d] = %@ | class=%@",
+    for (int i = 0; r && i < 20; i++) {
+
+        NSLog(@"[CCProbe] responder[%d] = %@ | class = %@",
               i,
               r,
               NSStringFromClass([r class]));
@@ -27,7 +30,7 @@
         r = [r nextResponder];
     }
 
-    NSLog(@"[CCProbe] ===========================");
+    NSLog(@"[CCProbe] ===============================");
 }
 
 %end
