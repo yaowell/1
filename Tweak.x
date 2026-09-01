@@ -1,43 +1,36 @@
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <string.h>
 
-@interface CCUICAPackageView : UIView
-@property (nonatomic, copy) NSString *packageName;
-@end
+__attribute__((constructor))
+static void CCProbeInit(void) {
+    @autoreleasepool {
+        unsigned int count = 0;
+        Class *classes = objc_copyClassList(&count);
 
-%hook CCUICAPackageView
+        NSLog(@"[CCProbe] ===== START =====");
+        NSLog(@"[CCProbe] Runtime class count: %u", count);
 
-- (void)didMoveToWindow {
-    %orig;
+        if (classes) {
+            for (unsigned int i = 0; i < count; i++) {
+                const char *name = class_getName(classes[i]);
 
-    if (!self.window) return;
+                if (!name) {
+                    continue;
+                }
 
-    NSString *className = NSStringFromClass([self class]);
-    NSString *superName = NSStringFromClass([self superclass]);
-    NSString *packageName = @"";
+                if (strcasestr(name, "LowPower") ||
+                    strcasestr(name, "Battery") ||
+                    strcasestr(name, "ControlCenter") ||
+                    strcasestr(name, "CCUI")) {
 
-    if ([self respondsToSelector:@selector(packageName)]) {
-        packageName = self.packageName ?: @"";
+                    NSLog(@"[CCProbe] CLASS: %s", name);
+                }
+            }
+
+            free(classes);
+        }
+
+        NSLog(@"[CCProbe] ===== END =====");
     }
-
-    NSLog(@"[CowbellProbe] ========================");
-    NSLog(@"[CowbellProbe] class       = %@", className);
-    NSLog(@"[CowbellProbe] superclass  = %@", superName);
-    NSLog(@"[CowbellProbe] packageName = %@", packageName);
-
-    UIResponder *r = self;
-    int level = 0;
-
-    while (r && level < 12) {
-        NSLog(@"[CowbellProbe] responder[%d] = %@",
-              level,
-              NSStringFromClass([r class]));
-
-        r = [r nextResponder];
-        level++;
-    }
-
-    NSLog(@"[CowbellProbe] ========================");
 }
-
-%end
