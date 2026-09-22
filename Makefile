@@ -1,6 +1,6 @@
-TARGET := iphone:clang:16.5:15.0
+TARGET := iphone:clang:latest:15.0
 
-THEOS_PACKAGE_SCHEME = rootless
+THEOS_PACKAGE_SCHEME = roothide
 
 include $(THEOS)/makefiles/common.mk
 
