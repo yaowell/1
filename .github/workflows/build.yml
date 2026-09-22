@@ -6,41 +6,26 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang make git perl
+      - name: Setup Theos
+        uses: waruhachi/theos-action@v1
+        with:
+          theos-src: theos/theos
+          theos-branch: main
+          sdks-src: theos/sdks
+          sdks-branch: master
 
-      - name: Clone Theos
+      - name: Build roothide package
         run: |
-          git clone --recursive https://github.com/theos/theos.git $GITHUB_WORKSPACE/theos
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
 
-      - name: Install iOS SDK
-        run: |
-          git clone https://github.com/theos/sdks.git /tmp/sdks
-          cp -R /tmp/sdks/iPhoneOS16.5.sdk $GITHUB_WORKSPACE/theos/sdks/
-
-      - name: Install ldid
-        run: |
-          curl -L https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64.tar.gz -o /tmp/ldid.tar.gz
-          tar -xzf /tmp/ldid.tar.gz -C /tmp
-          sudo cp /tmp/ldid /usr/local/bin/ldid
-          sudo chmod +x /usr/local/bin/ldid
-
-      - name: Build rootless package
-        run: |
-          export THEOS=$GITHUB_WORKSPACE/theos
-          make clean
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-
-      - name: Upload rootless deb
+      - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: 1-rootless-deb
+          name: 1-roothide-deb
           path: packages/*.deb
