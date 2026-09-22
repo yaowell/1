@@ -1,0 +1,9 @@
+Package: com.yaowell.1
+Name: 1
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: 1
+Maintainer: Yao Well
+Author: Yao Well
+Section: Tweaks
+Depends: mobilesubstrate
