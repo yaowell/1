@@ -1,9 +1,9 @@
 Package: com.yaowell.1
 Name: 1
-Version: 1.0.0
+Version: 1.0
 Architecture: iphoneos-arm64
-Description: 1
-Maintainer: Yao Well
-Author: Yao Well
+Description: AudioRecorder probe tweak for tracing recording-related methods and call stacks.
+Maintainer: yaowell
+Author: yaowell
 Section: Tweaks
-Depends: mobilesubstrate
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 16.0)
