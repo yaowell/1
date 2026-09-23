@@ -21,84 +21,173 @@ static void WriteLog(NSString *text) {
 }
 
 static void DumpStack(void) {
-    NSArray *symbols = [NSThread callStackSymbols];
+    NSArray *stack = [NSThread callStackSymbols];
 
     WriteLog(@"----- CALL STACK -----");
 
-    for (NSString *symbol in symbols) {
-        WriteLog(symbol);
+    for (NSString *line in stack) {
+        WriteLog(line);
     }
 
-    WriteLog(@"----- END STACK -----");
+    WriteLog(@"----- END CALL STACK -----");
 }
 
-static void InstallHook(void) {
-    Class cls = objc_getClass("AudioRecorderIPCController");
+static void HookVoidMethod(Class cls, SEL sel, NSString *name) {
+    Method method = class_getInstanceMethod(cls, sel);
 
-    if (!cls) {
-        dispatch_after(
-            dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
-            dispatch_get_main_queue(),
-            ^{
-                InstallHook();
-            }
-        );
+    if (!method) {
+        WriteLog([NSString stringWithFormat:@"NOT FOUND: %@", name]);
         return;
     }
 
+    IMP original = method_getImplementation(method);
+
+    IMP replacement = imp_implementationWithBlock(^(__unsafe_unretained id self) {
+        WriteLog(@"");
+        WriteLog([NSString stringWithFormat:@"===== %@ =====", name]);
+
+        DumpStack();
+
+        ((void (*)(id, SEL))original)(self, sel);
+
+        WriteLog([NSString stringWithFormat:@"===== %@ RETURN =====", name]);
+    });
+
+    method_setImplementation(method, replacement);
+
+    WriteLog([NSString stringWithFormat:@"HOOKED: %@", name]);
+}
+
+static void HookOneArgMethod(Class cls, SEL sel, NSString *name) {
+    Method method = class_getInstanceMethod(cls, sel);
+
+    if (!method) {
+        WriteLog([NSString stringWithFormat:@"NOT FOUND: %@", name]);
+        return;
+    }
+
+    IMP original = method_getImplementation(method);
+
+    IMP replacement = imp_implementationWithBlock(^(__unsafe_unretained id self, __unsafe_unretained id arg) {
+        WriteLog(@"");
+        WriteLog([NSString stringWithFormat:@"===== %@ =====", name]);
+
+        if (arg) {
+            WriteLog([NSString stringWithFormat:@"ARG CLASS: %@", NSStringFromClass([arg class])]);
+            WriteLog([NSString stringWithFormat:@"ARG: %@", arg]);
+        } else {
+            WriteLog(@"ARG: (null)");
+        }
+
+        DumpStack();
+
+        ((void (*)(id, SEL, id))original)(self, sel, arg);
+
+        WriteLog([NSString stringWithFormat:@"===== %@ RETURN =====", name]);
+    });
+
+    method_setImplementation(method, replacement);
+
+    WriteLog([NSString stringWithFormat:@"HOOKED: %@", name]);
+}
+
+static BOOL HookClass(void) {
+    Class controller = objc_getClass("AudioRecorderController");
+    Class ipc = objc_getClass("AudioRecorderIPCController");
+
+    BOOL foundAnything = NO;
+
+    if (controller) {
+        foundAnything = YES;
+
+        WriteLog(@"===== AudioRecorderController FOUND =====");
+
+        HookOneArgMethod(
+            controller,
+            @selector(recButtonTapped:),
+            @"AudioRecorderController recButtonTapped:"
+        );
+
+        HookOneArgMethod(
+            controller,
+            @selector(toggleRecordingFromMic:),
+            @"AudioRecorderController toggleRecordingFromMic:"
+        );
+
+        HookVoidMethod(
+            controller,
+            @selector(startRecordingFromMic),
+            @"AudioRecorderController startRecordingFromMic"
+        );
+
+        HookVoidMethod(
+            controller,
+            @selector(stopRecordingFromMic),
+            @"AudioRecorderController stopRecordingFromMic"
+        );
+
+        HookVoidMethod(
+            controller,
+            @selector(reallyStartRecordingFromMic),
+            @"AudioRecorderController reallyStartRecordingFromMic"
+        );
+    } else {
+        WriteLog(@"AudioRecorderController NOT READY");
+    }
+
+    if (ipc) {
+        foundAnything = YES;
+
+        WriteLog(@"===== AudioRecorderIPCController FOUND =====");
+
+        HookVoidMethod(
+            ipc,
+            @selector(manuallyStartRecordingForCurrentRecordableSource),
+            @"AudioRecorderIPCController manuallyStartRecordingForCurrentRecordableSource"
+        );
+
+        HookVoidMethod(
+            ipc,
+            @selector(manuallyStopRecordingForCurrentSourceBeingRecorded),
+            @"AudioRecorderIPCController manuallyStopRecordingForCurrentSourceBeingRecorded"
+        );
+    } else {
+        WriteLog(@"AudioRecorderIPCController NOT READY");
+    }
+
+    return foundAnything;
+}
+
+static void TryInstall(void) {
     static BOOL installed = NO;
 
     if (installed) {
         return;
     }
 
+    Class controller = objc_getClass("AudioRecorderController");
+    Class ipc = objc_getClass("AudioRecorderIPCController");
+
+    if (!controller && !ipc) {
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+            dispatch_get_main_queue(),
+            ^{
+                TryInstall();
+            }
+        );
+
+        return;
+    }
+
     installed = YES;
 
-    SEL startSel = @selector(manuallyStartRecordingForCurrentRecordableSource);
-    SEL stopSel = @selector(manuallyStopRecordingForCurrentSourceBeingRecorded);
+    WriteLog(@"");
+    WriteLog(@"===== INSTALLING LARGE AUDIORECORDER PROBE =====");
 
-    Method startMethod = class_getInstanceMethod(cls, startSel);
-    Method stopMethod = class_getInstanceMethod(cls, stopSel);
+    HookClass();
 
-    if (startMethod) {
-        IMP originalStart = method_getImplementation(startMethod);
-
-        IMP replacementStart = imp_implementationWithBlock(^(__unsafe_unretained id self) {
-            WriteLog(@"");
-            WriteLog(@"===== manuallyStartRecordingForCurrentRecordableSource CALLED =====");
-            DumpStack();
-
-            ((void (*)(id, SEL))originalStart)(self, startSel);
-
-            WriteLog(@"===== START RETURN =====");
-        });
-
-        method_setImplementation(startMethod, replacementStart);
-
-        WriteLog(@"START HOOK INSTALLED");
-    } else {
-        WriteLog(@"START METHOD NOT FOUND");
-    }
-
-    if (stopMethod) {
-        IMP originalStop = method_getImplementation(stopMethod);
-
-        IMP replacementStop = imp_implementationWithBlock(^(__unsafe_unretained id self) {
-            WriteLog(@"");
-            WriteLog(@"===== manuallyStopRecordingForCurrentSourceBeingRecorded CALLED =====");
-            DumpStack();
-
-            ((void (*)(id, SEL))originalStop)(self, stopSel);
-
-            WriteLog(@"===== STOP RETURN =====");
-        });
-
-        method_setImplementation(stopMethod, replacementStop);
-
-        WriteLog(@"STOP HOOK INSTALLED");
-    } else {
-        WriteLog(@"STOP METHOD NOT FOUND");
-    }
+    WriteLog(@"===== LARGE PROBE INSTALL COMPLETE =====");
 }
 
 %ctor {
@@ -109,7 +198,7 @@ static void InstallHook(void) {
         dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
         dispatch_get_main_queue(),
         ^{
-            InstallHook();
+            TryInstall();
         }
     );
 }
