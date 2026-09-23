@@ -21,11 +21,10 @@ static void WriteLog(NSString *text) {
 %ctor {
     NSString *process = [[NSProcessInfo processInfo] processName];
     NSString *bundle = [[NSBundle mainBundle] bundleIdentifier];
-
     Class cls = objc_getClass("AudioRecorderIPCController");
 
     WriteLog([NSString stringWithFormat:
-        @"\n===== 1 Probe =====\nProcess: %@\nBundle: %@\nAudioRecorderIPCController: %@\n",
+        @"Process: %@\nBundle: %@\nAudioRecorderIPCController: %@\n",
         process,
         bundle,
         cls ? @"FOUND" : @"NOT FOUND"
