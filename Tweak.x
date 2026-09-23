@@ -10,9 +10,7 @@ static void WriteProbe(NSString *method) {
     @autoreleasepool {
         NSString *path = @"/var/mobile/Documents/AudioRecorderProbe.log";
 
-        NSMutableString *text = [NSMutableString stringWithFormat:
-            @"\n========== %@ ==========\n", method];
-
+        NSMutableString *text = [NSMutableString stringWithFormat:@"\n========== %@ ==========\n", method];
         [text appendFormat:@"Time: %@\n", [NSDate date]];
         [text appendFormat:@"Process: %@\n", [[NSProcessInfo processInfo] processName]];
         [text appendString:@"Call Stack:\n"];
@@ -49,7 +47,3 @@ static void WriteProbe(NSString *method) {
 }
 
 %end
-
-%ctor {
-    %init(AudioRecorderIPCController);
-}
