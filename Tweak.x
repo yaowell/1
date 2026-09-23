@@ -1,25 +1,33 @@
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 
-static void WriteLog(void) {
+static void WriteLog(NSString *text) {
     @autoreleasepool {
         NSString *path = @"/var/mobile/Documents/1_process.log";
-        NSString *text = [NSString stringWithFormat:@"\nLoaded: %@\nProcess: %@\nBundle: %@\n",
-            [NSDate date],
-            [[NSProcessInfo processInfo] processName],
-            [[NSBundle mainBundle] bundleIdentifier]];
+        NSString *line = [NSString stringWithFormat:@"%@\n", text];
 
         NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
 
         if (!file) {
-            [text writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
         } else {
             [file seekToEndOfFile];
-            [file writeData:[text dataUsingEncoding:NSUTF8StringEncoding]];
+            [file writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
             [file closeFile];
         }
     }
 }
 
 %ctor {
-    WriteLog();
+    NSString *process = [[NSProcessInfo processInfo] processName];
+    NSString *bundle = [[NSBundle mainBundle] bundleIdentifier];
+
+    Class cls = objc_getClass("AudioRecorderIPCController");
+
+    WriteLog([NSString stringWithFormat:
+        @"\n===== 1 Probe =====\nProcess: %@\nBundle: %@\nAudioRecorderIPCController: %@\n",
+        process,
+        bundle,
+        cls ? @"FOUND" : @"NOT FOUND"
+    ]);
 }
