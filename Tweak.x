@@ -1,7 +1,5 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import <substrate.h>
-#import <dlfcn.h>
 #import <dispatch/dispatch.h>
 
 static void WriteLog(NSString *text) {
@@ -34,64 +32,84 @@ static void DumpStack(void) {
     WriteLog(@"----- END STACK -----");
 }
 
-static void HookWhenReady(void);
-
-static void StartHookTimer(void) {
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-            HookWhenReady();
-        }
-    );
-}
-
-static void HookWhenReady(void) {
+static void InstallHook(void) {
     Class cls = objc_getClass("AudioRecorderIPCController");
 
     if (!cls) {
-        WriteLog(@"AudioRecorderIPCController NOT READY");
-        StartHookTimer();
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+            dispatch_get_main_queue(),
+            ^{
+                InstallHook();
+            }
+        );
         return;
     }
 
-    SEL sel = @selector(toggleStartMicRecordingAction);
-    Method method = class_getInstanceMethod(cls, sel);
+    static BOOL installed = NO;
 
-    if (!method) {
-        WriteLog(@"toggleStartMicRecordingAction METHOD NOT FOUND");
+    if (installed) {
         return;
     }
 
-    static BOOL hooked = NO;
+    installed = YES;
 
-    if (hooked) {
-        return;
+    SEL startSel = @selector(manuallyStartRecordingForCurrentRecordableSource);
+    SEL stopSel = @selector(manuallyStopRecordingForCurrentSourceBeingRecorded);
+
+    Method startMethod = class_getInstanceMethod(cls, startSel);
+    Method stopMethod = class_getInstanceMethod(cls, stopSel);
+
+    if (startMethod) {
+        IMP originalStart = method_getImplementation(startMethod);
+
+        IMP replacementStart = imp_implementationWithBlock(^(__unsafe_unretained id self) {
+            WriteLog(@"");
+            WriteLog(@"===== manuallyStartRecordingForCurrentRecordableSource CALLED =====");
+            DumpStack();
+
+            ((void (*)(id, SEL))originalStart)(self, startSel);
+
+            WriteLog(@"===== START RETURN =====");
+        });
+
+        method_setImplementation(startMethod, replacementStart);
+
+        WriteLog(@"START HOOK INSTALLED");
+    } else {
+        WriteLog(@"START METHOD NOT FOUND");
     }
 
-    hooked = YES;
+    if (stopMethod) {
+        IMP originalStop = method_getImplementation(stopMethod);
 
-    IMP original = method_getImplementation(method);
+        IMP replacementStop = imp_implementationWithBlock(^(__unsafe_unretained id self) {
+            WriteLog(@"");
+            WriteLog(@"===== manuallyStopRecordingForCurrentSourceBeingRecorded CALLED =====");
+            DumpStack();
 
-    IMP replacement = imp_implementationWithBlock(^(__unsafe_unretained id self) {
-        WriteLog(@"");
-        WriteLog(@"===== toggleStartMicRecordingAction CALLED =====");
+            ((void (*)(id, SEL))originalStop)(self, stopSel);
 
-        DumpStack();
+            WriteLog(@"===== STOP RETURN =====");
+        });
 
-        ((void (*)(id, SEL))original)(self, sel);
+        method_setImplementation(stopMethod, replacementStop);
 
-        WriteLog(@"===== toggleStartMicRecordingAction RETURN =====");
-    });
-
-    method_setImplementation(method, replacement);
-
-    WriteLog(@"===== HOOK INSTALLED =====");
+        WriteLog(@"STOP HOOK INSTALLED");
+    } else {
+        WriteLog(@"STOP METHOD NOT FOUND");
+    }
 }
 
 %ctor {
     WriteLog(@"");
     WriteLog(@"===== 1 PROBE LOADED =====");
 
-    StartHookTimer();
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+        dispatch_get_main_queue(),
+        ^{
+            InstallHook();
+        }
+    );
 }
