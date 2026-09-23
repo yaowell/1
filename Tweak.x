@@ -1,21 +1,12 @@
 #import <Foundation/Foundation.h>
 
-@interface AudioRecorderIPCController : NSObject
-- (void)toggleStartMicRecordingAction;
-- (void)manuallyStartRecordingForCurrentRecordableSource;
-- (void)manuallyStopRecordingForCurrentSourceBeingRecorded;
-@end
-
-static void WriteProbe(NSString *method) {
+static void WriteLog(void) {
     @autoreleasepool {
-        NSString *path = @"/var/mobile/Documents/AudioRecorderProbe.log";
-
-        NSMutableString *text = [NSMutableString stringWithFormat:@"\n========== %@ ==========\n", method];
-        [text appendFormat:@"Time: %@\n", [NSDate date]];
-        [text appendFormat:@"Process: %@\n", [[NSProcessInfo processInfo] processName]];
-        [text appendString:@"Call Stack:\n"];
-        [text appendString:[[NSThread callStackSymbols] componentsJoinedByString:@"\n"]];
-        [text appendString:@"\n"];
+        NSString *path = @"/var/mobile/Documents/1_process.log";
+        NSString *text = [NSString stringWithFormat:@"\nLoaded: %@\nProcess: %@\nBundle: %@\n",
+            [NSDate date],
+            [[NSProcessInfo processInfo] processName],
+            [[NSBundle mainBundle] bundleIdentifier]];
 
         NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
 
@@ -29,21 +20,6 @@ static void WriteProbe(NSString *method) {
     }
 }
 
-%hook AudioRecorderIPCController
-
-- (void)toggleStartMicRecordingAction {
-    WriteProbe(@"toggleStartMicRecordingAction");
-    %orig;
+%ctor {
+    WriteLog();
 }
-
-- (void)manuallyStartRecordingForCurrentRecordableSource {
-    WriteProbe(@"manuallyStartRecordingForCurrentRecordableSource");
-    %orig;
-}
-
-- (void)manuallyStopRecordingForCurrentSourceBeingRecorded {
-    WriteProbe(@"manuallyStopRecordingForCurrentSourceBeingRecorded");
-    %orig;
-}
-
-%end
