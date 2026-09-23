@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <substrate.h>
+#import <dlfcn.h>
 #import <dispatch/dispatch.h>
 
 static void WriteLog(NSString *text) {
@@ -20,44 +22,76 @@ static void WriteLog(NSString *text) {
     }
 }
 
-static void CheckClass(NSString *tag) {
-    NSString *process = [[NSProcessInfo processInfo] processName];
-    NSString *bundle = [[NSBundle mainBundle] bundleIdentifier];
+static void DumpStack(void) {
+    NSArray *symbols = [NSThread callStackSymbols];
+
+    WriteLog(@"----- CALL STACK -----");
+
+    for (NSString *symbol in symbols) {
+        WriteLog(symbol);
+    }
+
+    WriteLog(@"----- END STACK -----");
+}
+
+static void HookWhenReady(void);
+
+static void StartHookTimer(void) {
+    dispatch_after(
+        dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC),
+        dispatch_get_main_queue(),
+        ^{
+            HookWhenReady();
+        }
+    );
+}
+
+static void HookWhenReady(void) {
     Class cls = objc_getClass("AudioRecorderIPCController");
 
-    WriteLog([NSString stringWithFormat:
-        @"[%@] Process=%@ Bundle=%@ AudioRecorderIPCController=%@",
-        tag,
-        process,
-        bundle,
-        cls ? @"FOUND" : @"NOT FOUND"
-    ]);
+    if (!cls) {
+        WriteLog(@"AudioRecorderIPCController NOT READY");
+        StartHookTimer();
+        return;
+    }
+
+    SEL sel = @selector(toggleStartMicRecordingAction);
+    Method method = class_getInstanceMethod(cls, sel);
+
+    if (!method) {
+        WriteLog(@"toggleStartMicRecordingAction METHOD NOT FOUND");
+        return;
+    }
+
+    static BOOL hooked = NO;
+
+    if (hooked) {
+        return;
+    }
+
+    hooked = YES;
+
+    IMP original = method_getImplementation(method);
+
+    IMP replacement = imp_implementationWithBlock(^(__unsafe_unretained id self) {
+        WriteLog(@"");
+        WriteLog(@"===== toggleStartMicRecordingAction CALLED =====");
+
+        DumpStack();
+
+        ((void (*)(id, SEL))original)(self, sel);
+
+        WriteLog(@"===== toggleStartMicRecordingAction RETURN =====");
+    });
+
+    method_setImplementation(method, replacement);
+
+    WriteLog(@"===== HOOK INSTALLED =====");
 }
 
 %ctor {
-    CheckClass(@"0s");
+    WriteLog(@"");
+    WriteLog(@"===== 1 PROBE LOADED =====");
 
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-            CheckClass(@"5s");
-        }
-    );
-
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-            CheckClass(@"15s");
-        }
-    );
-
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC),
-        dispatch_get_main_queue(),
-        ^{
-            CheckClass(@"30s");
-        }
-    );
+    StartHookTimer();
 }
