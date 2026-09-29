@@ -41,18 +41,13 @@ static NSString *ColorString(UIColor *color)
     CGFloat b = 0;
     CGFloat a = 0;
 
-    UIColor *rgb =
-        [color colorUsingColorSpace:
-            [UIColorSpace sRGBColorSpace]];
-
-    if ([rgb getRed:&r
-              green:&g
-               blue:&b
-              alpha:&a]) {
-
+    if ([color getRed:&r green:&g blue:&b alpha:&a]) {
         return [NSString stringWithFormat:
             @"RGBA %.4f %.4f %.4f %.4f / #%02X%02X%02X",
-            r, g, b, a,
+            r,
+            g,
+            b,
+            a,
             (unsigned int)(r * 255.0),
             (unsigned int)(g * 255.0),
             (unsigned int)(b * 255.0)];
@@ -74,8 +69,7 @@ static void DumpImage(UIImage *image, NSString *name)
 
     WriteLog(
         [NSString stringWithFormat:
-            @"IMAGE %@ size=%.1fx%.1f scale=%.1f "
-             "renderingMode=%ld",
+            @"IMAGE %@ size=%.1fx%.1f scale=%.1f renderingMode=%ld",
             name,
             image.size.width,
             image.size.height,
@@ -90,8 +84,38 @@ static void DumpControlCenterViews(void)
 
         WriteLog(@"===== CC VIEW DUMP BEGIN =====");
 
-        NSArray *windows =
-            [UIApplication sharedApplication].windows;
+        NSArray *windows = nil;
+
+        if (@available(iOS 13.0, *)) {
+
+            NSMutableArray *allWindows =
+                [NSMutableArray array];
+
+            for (UIScene *scene
+                 in [UIApplication sharedApplication].connectedScenes) {
+
+                if (![scene isKindOfClass:[UIWindowScene class]])
+                    continue;
+
+                UIWindowScene *windowScene =
+                    (UIWindowScene *)scene;
+
+                [allWindows addObjectsFromArray:
+                    windowScene.windows];
+            }
+
+            windows = [allWindows copy];
+
+        } else {
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+            windows =
+                [UIApplication sharedApplication].windows;
+
+#pragma clang diagnostic pop
+        }
 
         for (UIWindow *window in windows) {
 
@@ -118,7 +142,9 @@ static void DumpControlCenterViews(void)
 
             while (queue.count > 0) {
 
-                UIView *view = queue.firstObject;
+                UIView *view =
+                    queue.firstObject;
+
                 [queue removeObjectAtIndex:0];
 
                 NSString *className =
@@ -133,7 +159,8 @@ static void DumpControlCenterViews(void)
 
                     NSString *extra = @"";
 
-                    if ([view isKindOfClass:[UIImageView class]]) {
+                    if ([view isKindOfClass:
+                        [UIImageView class]]) {
 
                         UIImageView *imageView =
                             (UIImageView *)view;
@@ -159,8 +186,8 @@ static void DumpControlCenterViews(void)
 
                     WriteLog(
                         [NSString stringWithFormat:
-                            @"VIEW class=%@ frame=%@ "
-                             "tint=%@ hidden=%d alpha=%.2f%@",
+                            @"VIEW class=%@ frame=%@ tint=%@ "
+                             "hidden=%d alpha=%.2f%@",
                             className,
                             NSStringFromCGRect(view.frame),
                             ColorString(view.tintColor),
@@ -192,7 +219,8 @@ static void ProbeToggleState(id object, BOOL selected)
             selected]
     );
 
-    SEL iconSEL = @selector(iconGlyph);
+    SEL iconSEL =
+        @selector(iconGlyph);
 
     if ([object respondsToSelector:iconSEL]) {
 
@@ -221,7 +249,9 @@ static void ProbeToggleState(id object, BOOL selected)
                     exception]
             );
         }
+
     } else {
+
         WriteLog(@"iconGlyph NOT FOUND");
     }
 
