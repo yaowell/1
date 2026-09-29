@@ -37,72 +37,99 @@ static NSString *ColorString(UIColor *color)
     return [NSString stringWithFormat:@"%@",color];
 }
 
-static NSString *StateForView(UIView *view)
+static NSString *ImageInfo(UIImage *image)
 {
-    NSString *cls = NSStringFromClass(view.class);
-    NSString *label = view.accessibilityLabel ?: @"nil";
-    NSString *value = view.accessibilityValue ?: @"nil";
+    if (!image) return @"image=nil";
 
-    NSString *state = [NSString stringWithFormat:
-        @"class=%@ frame=%@ hidden=%d alpha=%.3f tint=%@ bg=%@ label=%@ value=%@",
-        cls,
-        NSStringFromCGRect(view.frame),
-        view.hidden,
-        view.alpha,
-        ColorString(view.tintColor),
-        ColorString(view.backgroundColor),
-        label,
-        value
+    return [NSString stringWithFormat:
+        @"image=%p size=%@ scale=%.2f mode=%ld",
+        image,
+        NSStringFromCGSize(image.size),
+        image.scale,
+        (long)image.renderingMode
     ];
-
-    if ([view isKindOfClass:[UIImageView class]]) {
-        UIImage *image = ((UIImageView *)view).image;
-
-        if (image) {
-            state = [state stringByAppendingFormat:
-                @" image=%p size=%@ mode=%ld",
-                image,
-                NSStringFromCGSize(image.size),
-                (long)image.renderingMode
-            ];
-        } else {
-            state = [state stringByAppendingString:@" image=nil"];
-        }
-    }
-
-    return state;
 }
 
-static BOOL InterestingView(UIView *view)
+static void DumpParentChain(UIView *view)
 {
+    NSInteger level = 0;
+
+    while (view && level < 8) {
+
+        WriteLog([NSString stringWithFormat:
+            @"  PARENT[%ld] class=%@ frame=%@ tint=%@ bg=%@",
+            (long)level,
+            NSStringFromClass(view.class),
+            NSStringFromCGRect(view.frame),
+            ColorString(view.tintColor),
+            ColorString(view.backgroundColor)
+        ]);
+
+        view = view.superview;
+        level++;
+    }
+}
+
+static BOOL InterestingImageView(UIImageView *view)
+{
+    if (!view.image)
+        return NO;
+
     NSString *cls = NSStringFromClass(view.class);
 
-    return
-        [cls containsString:@"CCUIButtonModuleView"] ||
-        [cls containsString:@"CCUIRoundButton"] ||
-        [cls containsString:@"CCUIToggleViewController"] ||
-        [cls containsString:@"UIImageView"];
+    if (![cls isEqualToString:@"UIImageView"])
+        return NO;
+
+    CGSize size = view.image.size;
+
+    if (size.width < 10 || size.width > 40)
+        return NO;
+
+    if (size.height < 5 || size.height > 40)
+        return NO;
+
+    return YES;
 }
 
 static void ScanView(UIView *view)
 {
-    if (InterestingView(view)) {
+    if ([view isKindOfClass:[UIImageView class]]) {
 
-        NSString *key = [NSString stringWithFormat:@"%p",view];
-        NSString *state = StateForView(view);
-        NSString *old = gStates[key];
+        UIImageView *imageView = (UIImageView *)view;
 
-        if (!old) {
-            gStates[key] = state;
-        } else if (![old isEqualToString:state]) {
+        if (InterestingImageView(imageView)) {
 
-            WriteLog(@"");
-            WriteLog(@"===== CHANGED =====");
-            WriteLog([NSString stringWithFormat:@"OLD: %@",old]);
-            WriteLog([NSString stringWithFormat:@"NEW: %@",state]);
-            WriteLog(@"===================");
+            NSString *key = [NSString stringWithFormat:@"%p",imageView];
 
-            gStates[key] = state;
+            NSString *state = [NSString stringWithFormat:
+                @"class=%@ frame=%@ tint=%@ bg=%@ %@",
+                NSStringFromClass(imageView.class),
+                NSStringFromCGRect(imageView.frame),
+                ColorString(imageView.tintColor),
+                ColorString(imageView.backgroundColor),
+                ImageInfo(imageView.image)
+            ];
+
+            NSString *old = gStates[key];
+
+            if (!old) {
+                gStates[key] = state;
+            }
+            else if (![old isEqualToString:state]) {
+
+                WriteLog(@"");
+                WriteLog(@"========== IMAGE CHANGED ==========");
+                WriteLog([NSString stringWithFormat:@"OLD: %@",old]);
+                WriteLog([NSString stringWithFormat:@"NEW: %@",state]);
+
+                WriteLog(@"----- PARENT CHAIN -----");
+                DumpParentChain(imageView);
+                WriteLog(@"----- END PARENT CHAIN -----");
+
+                WriteLog(@"===================================");
+
+                gStates[key] = state;
+            }
         }
     }
 
@@ -150,17 +177,18 @@ static void ScanControlCenter(void)
 
         WriteLog(@"");
         WriteLog(@"================================");
-        WriteLog(@"===== DND BASELINE CAPTURE =====");
+        WriteLog(@"===== DND PROBE V5 BASELINE =====");
         WriteLog(@"================================");
 
         for (UIView *view in window.subviews) {
             ScanView(view);
         }
 
-        WriteLog(@"===== BASELINE READY =====");
+        WriteLog(@"===== V5 BASELINE READY =====");
     }
 
     if (visible && gWasVisible && gHasBaseline) {
+
         for (UIView *view in window.subviews) {
             ScanView(view);
         }
@@ -180,7 +208,7 @@ static void ScanControlCenter(void)
 
         WriteLog(@"");
         WriteLog(@"================================");
-        WriteLog(@"===== DND COLOR PROBE V4 =====");
+        WriteLog(@"===== DND COLOR PROBE V5 =====");
         WriteLog(@"================================");
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -191,7 +219,7 @@ static void ScanControlCenter(void)
                 ScanControlCenter();
             }];
 
-            WriteLog(@"===== DND COLOR PROBE V4 READY =====");
+            WriteLog(@"===== DND COLOR PROBE V5 READY =====");
         });
     }
 }
