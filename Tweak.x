@@ -2,8 +2,12 @@
 #import <UIKit/UIKit.h>
 
 static NSTimer *gTimer;
-static BOOL gWasVisible = NO;
-static BOOL gDumped = NO;
+static UIWindow *gWindow;
+static BOOL gVisible = NO;
+static BOOL gBaselineReady = NO;
+static BOOL gLastDNDState = NO;
+
+static NSMutableDictionary *gBaseline = nil;
 
 static void WriteLog(NSString *text)
 {
@@ -36,61 +40,198 @@ static NSString *ColorString(UIColor *color)
     return [NSString stringWithFormat:@"%@",color];
 }
 
-static void DumpModule(UIView *view, NSInteger level)
+static NSString *ParentChain(UIView *view)
+{
+    NSMutableArray *array = [NSMutableArray array];
+
+    UIView *v = view.superview;
+
+    while (v) {
+        [array addObject:NSStringFromClass(v.class)];
+        v = v.superview;
+    }
+
+    return [array componentsJoinedByString:@" <- "];
+}
+
+static BOOL IsTargetView(UIView *view)
 {
     NSString *cls = NSStringFromClass(view.class);
 
-    BOOL module =
+    return
         [cls containsString:@"CCUIButtonModuleView"] ||
-        [cls containsString:@"CCUIModule"] ||
-        [cls containsString:@"CCUIRoundButton"] ||
-        [cls containsString:@"CCUIToggleViewController"];
+        [cls containsString:@"CCUIRoundButton"];
+}
 
-    if (module) {
+static NSString *ViewKey(UIView *view)
+{
+    return [NSString stringWithFormat:@"%p",view];
+}
 
-        WriteLog([NSString stringWithFormat:
-            @"MODULE class=%@ frame=%@ hidden=%d alpha=%.2f tint=%@ label=%@ value=%@ subviews=%lu",
-            cls,
-            NSStringFromCGRect(view.frame),
-            view.hidden,
-            view.alpha,
-            ColorString(view.tintColor),
-            view.accessibilityLabel ?: @"nil",
-            view.accessibilityValue ?: @"nil",
-            (unsigned long)view.subviews.count
-        ]);
+static NSDictionary *StateForView(UIView *view)
+{
+    NSMutableArray *children = [NSMutableArray array];
 
-        for (UIView *subview in view.subviews) {
+    for (UIView *subview in view.subviews) {
 
-            NSString *subClass = NSStringFromClass(subview.class);
+        if (![subview isKindOfClass:[UIImageView class]])
+            continue;
 
-            if ([subClass containsString:@"UIImageView"] ||
-                [subClass containsString:@"Button"] ||
-                [subClass containsString:@"Label"]) {
+        UIImageView *imageView = (UIImageView *)subview;
 
-                UIImage *image = nil;
+        [children addObject:@{
+            @"class": NSStringFromClass(subview.class),
+            @"frame": NSStringFromCGRect(subview.frame),
+            @"tint": ColorString(subview.tintColor),
+            @"image": [NSString stringWithFormat:@"%p",imageView.image],
+            @"size": imageView.image ?
+                NSStringFromCGSize(imageView.image.size) : @"nil"
+        }];
+    }
 
-                if ([subview isKindOfClass:[UIImageView class]]) {
-                    image = ((UIImageView *)subview).image;
-                }
+    return @{
+        @"class": NSStringFromClass(view.class),
+        @"frame": NSStringFromCGRect(view.frame),
+        @"hidden": @(view.hidden),
+        @"alpha": @(view.alpha),
+        @"tint": ColorString(view.tintColor),
+        @"selected": [view respondsToSelector:@selector(isSelected)] ?
+            @([view isSelected]) : @(-1),
+        @"highlighted": [view respondsToSelector:@selector(isHighlighted)] ?
+            @([view isHighlighted]) : @(-1),
+        @"identifier": view.accessibilityIdentifier ?: @"nil",
+        @"label": view.accessibilityLabel ?: @"nil",
+        @"value": view.accessibilityValue ?: @"nil",
+        @"children": children,
+        @"parents": ParentChain(view)
+    };
+}
 
-                WriteLog([NSString stringWithFormat:
-                    @"  CHILD class=%@ frame=%@ tint=%@ label=%@ value=%@ image=%p imageSize=%@",
-                    subClass,
-                    NSStringFromCGRect(subview.frame),
-                    ColorString(subview.tintColor),
-                    subview.accessibilityLabel ?: @"nil",
-                    subview.accessibilityValue ?: @"nil",
-                    image,
-                    image ? NSStringFromCGSize(image.size) : @"nil"
-                ]);
-            }
-        }
+static void CollectViews(UIView *view, NSMutableDictionary *result)
+{
+    if (IsTargetView(view)) {
+        result[ViewKey(view)] = StateForView(view);
     }
 
     for (UIView *subview in view.subviews) {
-        DumpModule(subview, level + 1);
+        CollectViews(subview, result);
     }
+}
+
+static NSDictionary *CurrentState(void)
+{
+    NSMutableDictionary *result = [NSMutableDictionary dictionary];
+
+    if (!gWindow)
+        return result;
+
+    CollectViews(gWindow, result);
+
+    return result;
+}
+
+static BOOL StateChanged(NSDictionary *a, NSDictionary *b)
+{
+    if (!a || !b)
+        return YES;
+
+    NSArray *keys = @[
+        @"frame",
+        @"hidden",
+        @"alpha",
+        @"tint",
+        @"selected",
+        @"highlighted",
+        @"identifier",
+        @"label",
+        @"value",
+        @"children"
+    ];
+
+    for (NSString *key in keys) {
+        if (![[a[key] description] isEqualToString:[b[key] description]])
+            return YES;
+    }
+
+    return NO;
+}
+
+static void DumpChanges(NSDictionary *before, NSDictionary *after)
+{
+    WriteLog(@"");
+    WriteLog(@"================================");
+    WriteLog(@"===== DND STATE CHANGES =====");
+    WriteLog(@"================================");
+
+    for (NSString *key in after) {
+
+        NSDictionary *oldState = before[key];
+        NSDictionary *newState = after[key];
+
+        if (!StateChanged(oldState,newState))
+            continue;
+
+        WriteLog(@"");
+        WriteLog([NSString stringWithFormat:@"VIEW %@",key]);
+
+        WriteLog([NSString stringWithFormat:
+            @"CLASS=%@",
+            newState[@"class"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"FRAME=%@",
+            newState[@"frame"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"TINT=%@",
+            newState[@"tint"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"SELECTED=%@",
+            newState[@"selected"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"HIGHLIGHTED=%@",
+            newState[@"highlighted"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"IDENTIFIER=%@",
+            newState[@"identifier"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"LABEL=%@",
+            newState[@"label"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"VALUE=%@",
+            newState[@"value"]]);
+
+        WriteLog([NSString stringWithFormat:
+            @"PARENTS=%@",
+            newState[@"parents"]]);
+
+        WriteLog(@"CHILDREN:");
+
+        for (NSDictionary *child in newState[@"children"]) {
+            WriteLog([NSString stringWithFormat:
+                @"  class=%@ frame=%@ tint=%@ image=%@ size=%@",
+                child[@"class"],
+                child[@"frame"],
+                child[@"tint"],
+                child[@"image"],
+                child[@"size"]]);
+        }
+
+        if (oldState) {
+            WriteLog(@"--- BEFORE ---");
+            WriteLog([NSString stringWithFormat:@"%@",oldState]);
+        } else {
+            WriteLog(@"--- BEFORE: NONE ---");
+        }
+    }
+
+    WriteLog(@"");
+    WriteLog(@"===== DND STATE CHANGES END =====");
 }
 
 static UIWindow *FindCCWindow(void)
@@ -121,29 +262,51 @@ static void Check(void)
     if (!window)
         return;
 
-    BOOL visible = !window.hidden && window.alpha > 0.01;
+    gWindow = window;
 
-    if (visible && !gWasVisible && !gDumped) {
+    BOOL visible =
+        !window.hidden &&
+        window.alpha > 0.01;
+
+    if (visible && !gVisible) {
+
+        gBaseline = [CurrentState() mutableCopy];
+        gBaselineReady = YES;
 
         WriteLog(@"");
         WriteLog(@"================================");
-        WriteLog(@"===== DND MODULE PROBE V6 =====");
+        WriteLog(@"===== DND BASELINE CAPTURED =====");
+        WriteLog(@"===== NOW CLICK NATIVE DND =====");
         WriteLog(@"================================");
+    }
 
-        for (UIView *view in window.subviews) {
-            DumpModule(view, 0);
+    if (visible && gVisible && gBaselineReady) {
+
+        NSDictionary *current = CurrentState();
+
+        BOOL different = NO;
+
+        for (NSString *key in current) {
+            if (StateChanged(gBaseline[key],current[key])) {
+                different = YES;
+                break;
+            }
         }
 
-        WriteLog(@"===== V6 END =====");
+        if (different) {
 
-        gDumped = YES;
+            DumpChanges(gBaseline,current);
+
+            gBaselineReady = NO;
+        }
     }
 
-    if (!visible && gWasVisible) {
-        gDumped = NO;
+    if (!visible && gVisible) {
+        gBaselineReady = NO;
+        gBaseline = nil;
     }
 
-    gWasVisible = visible;
+    gVisible = visible;
 }
 
 %ctor
@@ -152,18 +315,18 @@ static void Check(void)
 
         WriteLog(@"");
         WriteLog(@"================================");
-        WriteLog(@"===== DND MODULE PROBE V6 =====");
+        WriteLog(@"===== DND PROBE V7 =====");
         WriteLog(@"================================");
 
         dispatch_async(dispatch_get_main_queue(), ^{
 
-            gTimer = [NSTimer scheduledTimerWithTimeInterval:0.2
+            gTimer = [NSTimer scheduledTimerWithTimeInterval:0.15
                                                        repeats:YES
                                                          block:^(NSTimer *timer) {
                 Check();
             }];
 
-            WriteLog(@"===== V6 READY =====");
+            WriteLog(@"===== V7 READY =====");
         });
     }
 }
