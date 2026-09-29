@@ -3,6 +3,8 @@
 
 static NSTimer *gTimer;
 static BOOL gWasVisible = NO;
+static BOOL gHasBaseline = NO;
+static NSMutableDictionary *gStates;
 
 static void WriteLog(NSString *text)
 {
@@ -22,39 +24,90 @@ static void WriteLog(NSString *text)
     }
 }
 
-static void DumpView(UIView *view, NSInteger level)
+static NSString *ColorString(UIColor *color)
 {
-    if (!view) return;
+    if (!color) return @"nil";
 
-    NSMutableString *indent = [NSMutableString string];
-    for (NSInteger i = 0; i < level; i++) {
-        [indent appendString:@"  "];
+    CGFloat r = 0, g = 0, b = 0, a = 0;
+
+    if ([color getRed:&r green:&g blue:&b alpha:&a]) {
+        return [NSString stringWithFormat:@"rgba(%.3f,%.3f,%.3f,%.3f)",r,g,b,a];
     }
 
+    return [NSString stringWithFormat:@"%@",color];
+}
+
+static NSString *StateForView(UIView *view)
+{
     NSString *cls = NSStringFromClass(view.class);
-    NSString *label = nil;
-    NSString *value = nil;
+    NSString *label = view.accessibilityLabel ?: @"nil";
+    NSString *value = view.accessibilityValue ?: @"nil";
 
-    @try {
-        label = view.accessibilityLabel;
-        value = view.accessibilityValue;
-    } @catch (...) {}
-
-    WriteLog([NSString stringWithFormat:
-        @"%@%@ frame=%@ hidden=%d alpha=%.2f tint=%@ label=%@ value=%@ subviews=%lu",
-        indent,
+    NSString *state = [NSString stringWithFormat:
+        @"class=%@ frame=%@ hidden=%d alpha=%.3f tint=%@ bg=%@ label=%@ value=%@",
         cls,
         NSStringFromCGRect(view.frame),
         view.hidden,
         view.alpha,
-        view.tintColor,
-        label ?: @"nil",
-        value ?: @"nil",
-        (unsigned long)view.subviews.count
-    ]);
+        ColorString(view.tintColor),
+        ColorString(view.backgroundColor),
+        label,
+        value
+    ];
+
+    if ([view isKindOfClass:[UIImageView class]]) {
+        UIImage *image = ((UIImageView *)view).image;
+
+        if (image) {
+            state = [state stringByAppendingFormat:
+                @" image=%p size=%@ mode=%ld",
+                image,
+                NSStringFromCGSize(image.size),
+                (long)image.renderingMode
+            ];
+        } else {
+            state = [state stringByAppendingString:@" image=nil"];
+        }
+    }
+
+    return state;
+}
+
+static BOOL InterestingView(UIView *view)
+{
+    NSString *cls = NSStringFromClass(view.class);
+
+    return
+        [cls containsString:@"CCUIButtonModuleView"] ||
+        [cls containsString:@"CCUIRoundButton"] ||
+        [cls containsString:@"CCUIToggleViewController"] ||
+        [cls containsString:@"UIImageView"];
+}
+
+static void ScanView(UIView *view)
+{
+    if (InterestingView(view)) {
+
+        NSString *key = [NSString stringWithFormat:@"%p",view];
+        NSString *state = StateForView(view);
+        NSString *old = gStates[key];
+
+        if (!old) {
+            gStates[key] = state;
+        } else if (![old isEqualToString:state]) {
+
+            WriteLog(@"");
+            WriteLog(@"===== CHANGED =====");
+            WriteLog([NSString stringWithFormat:@"OLD: %@",old]);
+            WriteLog([NSString stringWithFormat:@"NEW: %@",state]);
+            WriteLog(@"===================");
+
+            gStates[key] = state;
+        }
+    }
 
     for (UIView *subview in view.subviews) {
-        DumpView(subview, level + 1);
+        ScanView(subview);
     }
 }
 
@@ -63,53 +116,59 @@ static UIWindow *FindCCWindow(void)
     UIApplication *app = [UIApplication sharedApplication];
 
     for (UIScene *scene in app.connectedScenes) {
+
         if (![scene isKindOfClass:[UIWindowScene class]])
             continue;
 
         UIWindowScene *sceneWindow = (UIWindowScene *)scene;
 
         for (UIWindow *window in sceneWindow.windows) {
+
             NSString *cls = NSStringFromClass(window.class);
 
-            if ([cls containsString:@"ControlCenter"]) {
+            if ([cls containsString:@"ControlCenter"])
                 return window;
-            }
         }
     }
 
     return nil;
 }
 
-static void CheckControlCenter(void)
+static void ScanControlCenter(void)
 {
     UIWindow *window = FindCCWindow();
-    if (!window) return;
+
+    if (!window)
+        return;
 
     BOOL visible = !window.hidden && window.alpha > 0.01;
 
     if (visible && !gWasVisible) {
+
+        gStates = [NSMutableDictionary dictionary];
+        gHasBaseline = YES;
+
         WriteLog(@"");
         WriteLog(@"================================");
-        WriteLog(@"===== CONTROL CENTER OPENED =====");
+        WriteLog(@"===== DND BASELINE CAPTURE =====");
         WriteLog(@"================================");
 
-        WriteLog([NSString stringWithFormat:
-            @"WINDOW CLASS: %@",
-            NSStringFromClass(window.class)
-        ]);
-
-        WriteLog([NSString stringWithFormat:
-            @"WINDOW FRAME: %@",
-            NSStringFromCGRect(window.frame)
-        ]);
-
-        WriteLog(@"===== BEGIN FULL VIEW HIERARCHY =====");
-
         for (UIView *view in window.subviews) {
-            DumpView(view, 0);
+            ScanView(view);
         }
 
-        WriteLog(@"===== END FULL VIEW HIERARCHY =====");
+        WriteLog(@"===== BASELINE READY =====");
+    }
+
+    if (visible && gWasVisible && gHasBaseline) {
+        for (UIView *view in window.subviews) {
+            ScanView(view);
+        }
+    }
+
+    if (!visible && gWasVisible) {
+        gHasBaseline = NO;
+        gStates = nil;
     }
 
     gWasVisible = visible;
@@ -118,19 +177,21 @@ static void CheckControlCenter(void)
 %ctor
 {
     @autoreleasepool {
+
         WriteLog(@"");
         WriteLog(@"================================");
-        WriteLog(@"===== DND HIERARCHY PROBE V3 =====");
+        WriteLog(@"===== DND COLOR PROBE V4 =====");
         WriteLog(@"================================");
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            gTimer = [NSTimer scheduledTimerWithTimeInterval:0.20
+
+            gTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
                                                        repeats:YES
                                                          block:^(NSTimer *timer) {
-                CheckControlCenter();
+                ScanControlCenter();
             }];
 
-            WriteLog(@"===== DND HIERARCHY PROBE V3 READY =====");
+            WriteLog(@"===== DND COLOR PROBE V4 READY =====");
         });
     }
 }
