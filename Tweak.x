@@ -1,9 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <objc/runtime.h>
 
 static NSTimer *gTimer;
-static NSMutableDictionary *gLastStates;
+static BOOL gWasVisible = NO;
 
 static void WriteLog(NSString *text)
 {
@@ -11,7 +10,6 @@ static void WriteLog(NSString *text)
         NSString *path = @"/var/mobile/Documents/1_probe.log";
         NSString *line = [NSString stringWithFormat:@"%@\n", text];
         NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
-
         NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
 
         if (!file) {
@@ -24,43 +22,16 @@ static void WriteLog(NSString *text)
     }
 }
 
-static NSString *ColorString(UIColor *color)
+static void DumpView(UIView *view, NSInteger level)
 {
-    if (!color) return @"nil";
+    if (!view) return;
 
-    CGFloat r = 0;
-    CGFloat g = 0;
-    CGFloat b = 0;
-    CGFloat a = 0;
-
-    if ([color getRed:&r green:&g blue:&b alpha:&a]) {
-        return [NSString stringWithFormat:@"rgba(%.3f,%.3f,%.3f,%.3f)", r,g,b,a];
+    NSMutableString *indent = [NSMutableString string];
+    for (NSInteger i = 0; i < level; i++) {
+        [indent appendString:@"  "];
     }
 
-    return [NSString stringWithFormat:@"%@", color];
-}
-
-static NSString *ViewKey(UIView *view)
-{
-    return [NSString stringWithFormat:@"%p", view];
-}
-
-static void InspectView(UIView *view)
-{
-    NSString *cls = NSStringFromClass([view class]);
-
-    BOOL interesting =
-        [cls containsString:@"CCUIRoundButton"] ||
-        [cls containsString:@"CCUIButtonModuleView"] ||
-        [cls containsString:@"CCUIToggleViewController"] ||
-        [cls containsString:@"CCUIModule"] ||
-        [cls containsString:@"UIImageView"];
-
-    if (!interesting)
-        return;
-
-    NSString *key = ViewKey(view);
-
+    NSString *cls = NSStringFromClass(view.class);
     NSString *label = nil;
     NSString *value = nil;
 
@@ -69,47 +40,25 @@ static void InspectView(UIView *view)
         value = view.accessibilityValue;
     } @catch (...) {}
 
-    NSString *state = [NSString stringWithFormat:
-        @"class=%@ frame=%@ hidden=%d alpha=%.3f tint=%@ label=%@ value=%@",
+    WriteLog([NSString stringWithFormat:
+        @"%@%@ frame=%@ hidden=%d alpha=%.2f tint=%@ label=%@ value=%@ subviews=%lu",
+        indent,
         cls,
         NSStringFromCGRect(view.frame),
         view.hidden,
         view.alpha,
-        ColorString(view.tintColor),
+        view.tintColor,
         label ?: @"nil",
-        value ?: @"nil"
-    ];
-
-    if ([view isKindOfClass:[UIImageView class]]) {
-        UIImageView *imageView = (UIImageView *)view;
-        UIImage *image = imageView.image;
-
-        if (image) {
-            state = [state stringByAppendingFormat:
-                @" image=%p size=%@ scale=%.2f renderingMode=%ld",
-                image,
-                NSStringFromCGSize(image.size),
-                image.scale,
-                (long)image.renderingMode
-            ];
-        } else {
-            state = [state stringByAppendingString:@" image=nil"];
-        }
-    }
-
-    NSString *old = gLastStates[key];
-
-    if (!old || ![old isEqualToString:state]) {
-        WriteLog([NSString stringWithFormat:@"[CHANGE] %@", state]);
-        gLastStates[key] = state;
-    }
+        value ?: @"nil",
+        (unsigned long)view.subviews.count
+    ]);
 
     for (UIView *subview in view.subviews) {
-        InspectView(subview);
+        DumpView(subview, level + 1);
     }
 }
 
-static UIWindow *FindControlCenterWindow(void)
+static UIWindow *FindCCWindow(void)
 {
     UIApplication *app = [UIApplication sharedApplication];
 
@@ -117,13 +66,12 @@ static UIWindow *FindControlCenterWindow(void)
         if (![scene isKindOfClass:[UIWindowScene class]])
             continue;
 
-        UIWindowScene *windowScene = (UIWindowScene *)scene;
+        UIWindowScene *sceneWindow = (UIWindowScene *)scene;
 
-        for (UIWindow *window in windowScene.windows) {
-            NSString *cls = NSStringFromClass([window class]);
+        for (UIWindow *window in sceneWindow.windows) {
+            NSString *cls = NSStringFromClass(window.class);
 
-            if ([cls containsString:@"ControlCenter"] ||
-                [cls containsString:@"CCUI"]) {
+            if ([cls containsString:@"ControlCenter"]) {
                 return window;
             }
         }
@@ -132,55 +80,57 @@ static UIWindow *FindControlCenterWindow(void)
     return nil;
 }
 
-static void ScanControlCenter(void)
+static void CheckControlCenter(void)
 {
-    UIWindow *window = FindControlCenterWindow();
+    UIWindow *window = FindCCWindow();
+    if (!window) return;
 
-    if (!window) {
-        return;
+    BOOL visible = !window.hidden && window.alpha > 0.01;
+
+    if (visible && !gWasVisible) {
+        WriteLog(@"");
+        WriteLog(@"================================");
+        WriteLog(@"===== CONTROL CENTER OPENED =====");
+        WriteLog(@"================================");
+
+        WriteLog([NSString stringWithFormat:
+            @"WINDOW CLASS: %@",
+            NSStringFromClass(window.class)
+        ]);
+
+        WriteLog([NSString stringWithFormat:
+            @"WINDOW FRAME: %@",
+            NSStringFromCGRect(window.frame)
+        ]);
+
+        WriteLog(@"===== BEGIN FULL VIEW HIERARCHY =====");
+
+        for (UIView *view in window.subviews) {
+            DumpView(view, 0);
+        }
+
+        WriteLog(@"===== END FULL VIEW HIERARCHY =====");
     }
 
-    NSString *windowClass = NSStringFromClass([window class]);
-
-    NSString *header = [NSString stringWithFormat:
-        @"[CC FOUND] window=%@ frame=%@ hidden=%d alpha=%.3f",
-        windowClass,
-        NSStringFromCGRect(window.frame),
-        window.hidden,
-        window.alpha
-    ];
-
-    static NSString *lastHeader;
-
-    if (!lastHeader || ![lastHeader isEqualToString:header]) {
-        WriteLog(header);
-        lastHeader = [header copy];
-    }
-
-    for (UIView *view in window.subviews) {
-        InspectView(view);
-    }
+    gWasVisible = visible;
 }
 
 %ctor
 {
     @autoreleasepool {
-
         WriteLog(@"");
         WriteLog(@"================================");
-        WriteLog(@"===== DND COLOR PROBE V2 =====");
+        WriteLog(@"===== DND HIERARCHY PROBE V3 =====");
         WriteLog(@"================================");
 
-        gLastStates = [NSMutableDictionary dictionary];
-
         dispatch_async(dispatch_get_main_queue(), ^{
-            gTimer = [NSTimer scheduledTimerWithTimeInterval:0.30
+            gTimer = [NSTimer scheduledTimerWithTimeInterval:0.20
                                                        repeats:YES
                                                          block:^(NSTimer *timer) {
-                ScanControlCenter();
+                CheckControlCenter();
             }];
 
-            WriteLog(@"===== DND COLOR PROBE V2 READY =====");
+            WriteLog(@"===== DND HIERARCHY PROBE V3 READY =====");
         });
     }
 }
